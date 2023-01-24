@@ -19,10 +19,60 @@ import pandas as pd
 from lmfit import minimize, Parameters
 import sys
 #sys.path.append("/Users/Trevor1/Dropbox/ICA_module/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/HST/HSTCode/")
+sys.path.append("/Users/Trevor1/Dropbox/ICA_module/")
+sys.path.append("/Users/Trevor1/Dropbox/HST/HSTCode/")
 import plot_ICA
 import spec_morph
+
+def rebin(wave, flux, errs, mask):
+    #create re-binned wavelength array - this is the easy part!
+    #resolution is constant in log-space for SDSS, so easier to stick with that
+    logwave = np.log10(wave)
+    loglam_rebin = np.arange(logwave[0], logwave[-1], 0.0001)
+    loglam_rebin_edges = loglam_rebin - 0.0001/2
+    loglam_rebin_edges = np.append(loglam_rebin_edges, loglam_rebin[-1]+0.0001/2)
+
+    #start empty
+    flux_rebin = np.nan*np.zeros(len(loglam_rebin))
+    errs_rebin = np.nan*np.zeros(len(loglam_rebin))
+    mask_rebin = np.zeros(len(loglam_rebin))
+
+    #and fill them in
+    for i in range(len(loglam_rebin_edges)-1):
+        ledge_rebin, redge_rebin = loglam_rebin_edges[i], loglam_rebin_edges[i+1]
+        #orig edges
+        #oldwidth =
+
+        maskOrig = (logwave>ledge_rebin)&(logwave<redge_rebin)
+        if not maskOrig.sum()==0:
+            #flux_rebin[i] = ws.numpy_weighted_median(flux[maskOrig], weights=1./(errs[maskOrig]**2))
+            flux_rebin[i] = np.median(flux[maskOrig])
+            errs_rebin[i] = np.median(errs[maskOrig])
+            mask_rebin[i] = np.max(mask[maskOrig])
+
+    if (np.isnan(flux_rebin)).any():
+        #initial resolution could be low enough such that some re-binned pixels weren't assigned a value
+        #for those, interpolate with nearest neighbors
+        for j in range(len(flux_rebin)):
+            if np.isnan(flux_rebin[j]): #should make sure here it's not a known "gap", instead just ones missed from above
+                arg1 = np.argmin(loglam_rebin[~np.isnan(flux_rebin)]-loglam[j])
+                arg2 = arg2min(loglam_rebin[~np.isnan(flux_rebin)]-loglam[j])
+                loglam1, flux1, errs1 = loglam_rebin[~np.isnan(flux_rebin)][arg1], \
+                                        flux_rebin[~np.isnan(flux_rebin)][arg1], \
+                                        errs_rebin[~np.isnan(flux_rebin)][arg1]
+                loglam2, flux2, errs2 = loglam_rebin[~np.isnan(flux_rebin)][arg2], \
+                                        flux_rebin[~np.isnan(flux_rebin)][arg2], \
+                                        errs_rebin[~np.isnan(flux_rebin)][arg2]
+                oldwidth = abs(loglam2-loglam1)
+                #do linear fit on nearest non-nan neighbors
+                m_flux, b_flux = np.polyfit([loglam1, loglam2], [flux1, flux2], 1)
+                flux_rebin[j] = m_flux*loglam_rebin[j] + b_flux
+                m_errs, b_errs = np.polyfit([loglam1, loglam2], [errs1, errs2], 1)
+                errs_rebin[j] = (m_errs*loglam_rebin[j] + b_errs) * np.sqrt(oldwidth/0.0001)
+                #leave mask[j]==0 for now
+
+    wave_rebin = 10.**loglam_rebin
+    return wave_rebin, flux_rebin, errs_rebin, mask_rebin
 
 def blueshift(wave_half_flux):
     '''
@@ -82,6 +132,14 @@ def maskNAL(wave, flux, errs, mask):
             mask_wnal[i-3:i+3+1] = 3. #this keeps from masking the entire spectrum in the for loop!
     mask_wnal[mask_wnal==3] = 2 #save them all as two
     return mask_wnal
+
+def get_f2500(wave, flux, errs, mask, norm_coeff, ica_path="./"):
+    #real units!  also using the final generated mask
+    wave_norm_ica, flux_norm_ica = get_ICA(wave, flux, errs, mask,
+                                 ica_path=ica_path,
+                                 plot_spectrum=False, CHISQ=True, comps_use=None)
+    ind2500 = np.argmin(abs(wave_norm_ica-2500.))
+    return flux_norm_ica[ind2500]*norm_coeff
 
 def load_ICA(ica_path="./"):
     """
@@ -280,6 +338,12 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./"):
     errs = errsSpec.copy()
     mask = maskSpec.copy()
 
+    # check wavelength resolution, and rebin if it doesn't match components (~69 km/s)
+    resolution = np.nanmedian([3.e5*((wave[i+1]-wave[i])/wave[i]) for i in range(len(wave)-1)])
+    if round(resolution)!=69:
+        print("Input wavelength resolution does not match 69 km/s.  Re-binning spectrum.")
+        wave, flux, errs, mask = rebin(wave, flux, errs, mask)
+
     #normalize spectrum
     norm_coeff = np.nanmedian(flux)
     flux /= norm_coeff
@@ -305,13 +369,19 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./"):
 
     #now do ICA fit with final mask applied
     wave_ica, flux_ica = get_ICA(wave, flux_morph, errs_morph, mask_witer,
-                                 ica_path="/Users/trevormccaffrey/Dropbox/ICA_module/components/",
+                                 ica_path=ica_path,
                                  plot_spectrum=False, CHISQ=True, comps_use=None)
+
+    # FIXME: should add code here that checks if CIII] is in spectrum,
+    # if it is, measure blueshift and generate priors for weights based on measurement
 
     #get f2500 from reconstruction
     #de-morph and de-normalize the spectrum to get back to real units
-    iwave_start = np.argmin(abs(wave-min(wave_ica)))
-    flux_ica_realunits = flux_ica / morph_coeff[iwave_start:iwave_start+len(wave_ica)] * norm_coeff
-    f2500_ica = flux_ica_realunits[np.argmin(abs(wave_ica-2500.))]
+    # FIXME: need to get indexing right here for edge cases - commenting out for now
+    #iwave_start = np.argmin(abs(wave-min(wave_ica)))
+    #flux_ica_realunits = flux_ica / morph_coeff[iwave_start:iwave_start+len(wave_ica)] * norm_coeff
+    #f2500_ica = flux_ica_realunits[np.argmin(abs(wave_ica-2500.))]
+    #Note the input units - normalized, but not morphed
+    f2500_ica = get_f2500(wave, flux, errs, mask_witer, norm_coeff, ica_path=ica_path)
 
-    return flux_morph, errs_morph, wave_ica, flux_ica, f2500_ica #return flux with Arbitrary units as well for plotting
+    return wave, flux_morph, errs_morph, mask_witer, wave_ica, flux_ica, f2500_ica #return flux with Arbitrary units as well for plotting
