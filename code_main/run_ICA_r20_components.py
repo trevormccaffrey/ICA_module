@@ -378,10 +378,12 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./"):
     #get f2500 from reconstruction
     #de-morph and de-normalize the spectrum to get back to real units
     # FIXME: need to get indexing right here for edge cases - commenting out for now
-    #iwave_start = np.argmin(abs(wave-min(wave_ica)))
-    #flux_ica_realunits = flux_ica / morph_coeff[iwave_start:iwave_start+len(wave_ica)] * norm_coeff
-    #f2500_ica = flux_ica_realunits[np.argmin(abs(wave_ica-2500.))]
+    try:
+        iwave_start = np.argmin(abs(wave-min(wave_ica)))
+        flux_ica_realunits = flux_ica / morph_coeff[iwave_start:iwave_start+len(wave_ica)] * norm_coeff
+        f2500_ica = flux_ica_realunits[np.argmin(abs(wave_ica-2500.))]
     #Note the input units - normalized, but not morphed
-    f2500_ica = get_f2500(wave, flux, errs, mask_witer, norm_coeff, ica_path=ica_path)
+    except ValueError:
+        f2500_ica = get_f2500(wave, flux, errs, mask_witer, norm_coeff, ica_path=ica_path)
 
     return wave, flux_morph, errs_morph, mask_witer, wave_ica, flux_ica, f2500_ica #return flux with Arbitrary units as well for plotting
