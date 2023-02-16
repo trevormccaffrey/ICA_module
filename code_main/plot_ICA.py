@@ -14,7 +14,7 @@ def spec_wreconstruction(spec_wave, spec_flux, spec_errs, spec_mask, rec_wave, r
     fig.subplots_adjust(hspace=0)
 
     ax1.plot(spec_wave, spec_flux, color="k", label="Spectrum", zorder=1)
-    ax1.scatter(spec_wave[spec_mask==1], spec_flux[spec_mask==1], color="r", label="Masked Pixels - found", zorder=2)
+    ax1.scatter(spec_wave[spec_mask>0], spec_flux[spec_mask>0], color="r", label="Masked Pixels - found", zorder=2)
     #ax1.scatter(spec_wave[spec_mask==2], spec_flux[spec_mask==2], color="g", label="Masked Pixels - bordering found", zorder=2)
     ax1.plot(rec_wave, rec_flux, color="b", linewidth=2.5, label="Reconstruction", zorder=2)
     ax2.plot(spec_wave, spec_errs, color="k", label="Spectrum Errors", zorder=1)

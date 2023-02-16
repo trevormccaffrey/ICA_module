@@ -106,6 +106,7 @@ def morph2(wave, flux, errs, z, Identifier):
     #nopadStart = np.argmin(np.abs(min(wave)-wave_wpad))
     #cont_spec = cont_spec_padded[nopadStart:nopadStart+len(wave)]
     cont_spec = cont_filtered(wave, flux, z, Identifier)
+    #cont_spec = continuum_fit2(wave, flux, z)
     cont_spec = Small_Pix_Filter_TVM.SDSS_pixel_filter(wave, cont_spec, np.nanmin([len(wave)-1, 300]))
     cont_morph = Small_Pix_Filter_TVM.SDSS_pixel_filter(wave, cont_morph, np.nanmin([len(wave)-1, 300]))
     #cont_spec = Small_Pix_Filter_TVM.SDSS_pixel_filter(wave, cont_spec, 300)

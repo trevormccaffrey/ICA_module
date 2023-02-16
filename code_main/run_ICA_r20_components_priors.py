@@ -16,15 +16,13 @@ without waiting on me.  Hopefully this works!
 #see Rankine+2020 for lmfit installation
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
-import matplotlib
 import numpy as np
 import pandas as pd
 from lmfit import minimize, Parameters
 import sys
 #sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/code_main/")
+sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/")
 sys.path.append("/Users/trevormccaffrey/Dropbox/HST/HSTCode/")
-import fit_composites
 import plot_ICA
 import spec_morph
 
@@ -32,11 +30,9 @@ def arg2min(arr):
     #return index of second closest point
     return np.argsort(arr)[1]
 
-def rebin(wave, flux, errs, mask, orig_width_kms):
+def rebin(wave, flux, errs, mask):
     #create re-binned wavelength array - this is the easy part!
     #resolution is constant in log-space for SDSS, so easier to stick with that
-    error_multiple = np.sqrt(orig_width_kms/69.)
-
     logwave = np.log10(wave)
     loglam_rebin = np.arange(logwave[0], logwave[-1], 0.0001)
     loglam_rebin_edges = loglam_rebin - 0.0001/2
@@ -84,7 +80,6 @@ def rebin(wave, flux, errs, mask, orig_width_kms):
                 #leave mask[j]==0 for now
 
     wave_rebin = 10.**loglam_rebin
-    errs_rebin *= error_multiple
     return wave_rebin, flux_rebin, errs_rebin, mask_rebin
 
 def blueshift(wave_half_flux):
@@ -194,26 +189,21 @@ def pixel_filter(wavelength,data,npix=20):
     return continuum
 
 def maskNAL(wave, flux, errs, mask):
-    N = 3. #flag pixels N*sigma below median
-    flux_NAL = flux.copy()
     mask_NAL = mask.copy()
     flux_median_61p = pixel_filter(wave, flux, 61)
-    NALpix = (flux_median_61p-flux > N*errs)
-    mask_NAL[NALpix] = 2.
-    flux_NAL[NALpix] = flux_median_61p[NALpix]
+    mask_NAL[(flux_median_61p-flux > 3*errs)] = 2.
     #Pad the NAL mask three pixels each side
     for i in range(len(wave)):
         if mask_NAL[i]==2.:
             mask_NAL[i-3:i+3+1] = 3. #this keeps from masking the entire spectrum in the for loop!
-            flux_NAL[i-3:i+3+1] = flux_median_61p[i-3:i+3+1]
     mask_NAL[mask_NAL==3] = 2 #save them all as two
-    return mask_NAL, flux_NAL, flux_median_61p
+    return mask_NAL, flux_median_61p
 
-def get_f2500(wave, flux, errs, mask, z, norm_coeff, ica_path="./"):
+def get_f2500(wave, flux, errs, mask, norm_coeff, ica_path="./"):
     #real units!  also using the final generated mask
-    wave_norm_ica, flux_norm_ica = get_ICA(wave, flux, errs, mask, z,
-                                 ica_path=ica_path, use_priors=False,
-                                 plot_spectrum=False, comps_use=None)
+    wave_norm_ica, flux_norm_ica = get_ICA(wave, flux, errs, mask,
+                                 ica_path=ica_path,
+                                 plot_spectrum=False, CHISQ=True, comps_use=None)
     ind2500 = np.argmin(abs(wave_norm_ica-2500.))
     return flux_norm_ica[ind2500]*norm_coeff
 
@@ -257,7 +247,7 @@ def residual(params, comps, data, eps_data):
     model = sum(params[w].value*comps[n] for (n, w) in enumerate(params))
     return (data-model)**2 * eps_data
 
-def ICA_fit(components, wave, spectrum, ivar, flags, priors):
+def ICA_fit(components, wave, spectrum, ivar, flags):
     # FIXME: explain this
     #this is called ICA_fit, but we get the component weights from minimize()
     '''
@@ -266,13 +256,12 @@ def ICA_fit(components, wave, spectrum, ivar, flags, priors):
     '''
     params = Parameters()
     for i in range(len(components)):
-        params.add('W%d' % (i+1), value=priors[i])
-    #print(params)
+        params.add('W%d' % (i+1), value=0)
     #badpix = masking(wave, spectrum, 1/np.sqrt(ivar))
     ivar[flags>0] = 0.
     return minimize(residual, params, args=(components, spectrum, ivar), method="lbfgsb", nan_policy='omit')
 
-def get_ICA(wave, flux, errs, mask, z, ica_path="./", use_priors=True, plot_spectrum=True, comps_use=None):
+def get_ICA(wave, flux, errs, mask, ica_path="./", plot_spectrum=True, CHISQ=True, comps_use=None):
     #most of this function just aligns the pixels from your spectrum and the ICA components
     wave_mod, components_mod, wave_low, components_low, wave_high, components_high = load_ICA(ica_path)
 
@@ -297,41 +286,37 @@ def get_ICA(wave, flux, errs, mask, z, ica_path="./", use_priors=True, plot_spec
 
     ###############
     #Now do fitting
-    if use_priors:
-        prior_low, prior_mod, prior_high = fit_composites.main(wave, flux, errs, mask, z)
-    else:
-        prior_low, prior_mod, prior_high = np.zeros(10), np.zeros(10), np.zeros(7)
 
     # mod EW
     #print(len(wave[mod_mask]), len(wave_mod_fit))
     if len(wave[mod_mask])==len(wave_mod_fit):
-        fit_mod  = ICA_fit(components_mod_fit, wave[mod_mask], flux[mod_mask], 1/(errs[mod_mask]**2), mask[mod_mask], priors=prior_mod)
+        fit_mod  = ICA_fit(components_mod_fit, wave[mod_mask], flux[mod_mask], 1/(errs[mod_mask]**2), mask[mod_mask])
     else:
         #input wave is greater by one pixel, cut components byb one
         if len(wave[mod_mask])-len(wave_mod_fit) == -1:
-            fit_mod  = ICA_fit(components_mod_fit[:,:-1], wave[mod_mask], flux[mod_mask], 1/(errs[mod_mask]**2), mask[mod_mask], priors=prior_mod)
+            fit_mod  = ICA_fit(components_mod_fit[:,:-1], wave[mod_mask], flux[mod_mask], 1/(errs[mod_mask]**2), mask[mod_mask])
         elif len(wave[mod_mask])-len(wave_mod_fit) == 1:
-            fit_mod  = ICA_fit(components_mod_fit, wave[mod_mask][:-1], flux[mod_mask][:-1], 1/(errs[mod_mask][:-1]**2), mask[mod_mask][:-1], priors=prior_mod)
+            fit_mod  = ICA_fit(components_mod_fit, wave[mod_mask][:-1], flux[mod_mask][:-1], 1/(errs[mod_mask][:-1]**2), mask[mod_mask][:-1])
     #low EW
     if len(wave[low_mask])==len(wave_low_fit):
-        fit_low  = ICA_fit(components_low_fit, wave[low_mask], flux[low_mask], 1/(errs[low_mask]**2), mask[low_mask], priors=prior_low)
+        fit_low  = ICA_fit(components_low_fit, wave[low_mask], flux[low_mask], 1/(errs[low_mask]**2), mask[low_mask])
     else:
         #input wave is greater by one pixel, cut components byb one
         if len(wave[low_mask])-len(wave_low_fit) == -1:
-            fit_low  = ICA_fit(components_low_fit[:,:-1], wave[low_mask], flux[low_mask], 1/(errs[low_mask]**2), mask[low_mask], priors=prior_low)
+            fit_low  = ICA_fit(components_low_fit[:,:-1], wave[low_mask], flux[low_mask], 1/(errs[low_mask]**2), mask[low_mask])
         elif len(wave[low_mask])-len(wave_low_fit) == 1:
-            fit_low  = ICA_fit(components_low_fit, wave[low_mask][:-1], flux[low_mask][:-1], 1/(errs[low_mask][:-1]**2), mask[low_mask][:-1], priors=prior_low)
+            fit_low  = ICA_fit(components_low_fit, wave[low_mask][:-1], flux[low_mask][:-1], 1/(errs[low_mask][:-1]**2), mask[low_mask][:-1])
 
     #high EW
     if len(wave[high_mask])==len(wave_high_fit):
-        fit_high  = ICA_fit(components_high_fit, wave[high_mask], flux[high_mask], 1/(errs[high_mask]**2), mask[high_mask], priors=prior_high)
+        fit_high  = ICA_fit(components_high_fit, wave[high_mask], flux[high_mask], 1/(errs[high_mask]**2), mask[high_mask])
     else:
         #input wave is greater by one pixel, cut components byb one
         if len(wave[high_mask])-len(wave_high_fit) == -1:
-            fit_high  = ICA_fit(components_high_fit[:,:-1], wave[high_mask], flux[high_mask], 1/(errs[high_mask]**2), mask[high_mask], priors=prior_high)
+            fit_high  = ICA_fit(components_high_fit[:,:-1], wave[high_mask], flux[high_mask], 1/(errs[high_mask]**2), mask[high_mask])
         elif len(wave[high_mask])-len(wave_high_fit) == 1:
             #print(wave_high_fit.shape, wave[high_mask].shape)
-            fit_high  = ICA_fit(components_high_fit, wave[high_mask][:-1], flux[high_mask][:-1], 1/(errs[high_mask][:-1]**2), mask[high_mask][:-1], priors=prior_high)
+            fit_high  = ICA_fit(components_high_fit, wave[high_mask][:-1], flux[high_mask][:-1], 1/(errs[high_mask][:-1]**2), mask[high_mask][:-1])
 
     #this is what all branches above would look like w/o index problems
     #fit_mod   = ICA_fit(components_mod[:,mod_comp_mask], wave[mod_mask], flux[mod_mask], 1/(errs[mod_mask]**2), mask[mod_mask]) if len(wave[mod_mask])==len(wave_mod) else ICA_fit(components_mod[:,:-1], wave[mod_mask], flux[mod_mask], 1/(errs[mod_mask]**2), mask[mod_mask])
@@ -343,48 +328,32 @@ def get_ICA(wave, flux, errs, mask, z, ica_path="./", use_priors=True, plot_spec
     weights_low  = [fit_low.params[i].value for i in fit_low.params]
     weights_high = [fit_high.params[i].value for i in fit_high.params]
 
-    if comps_use is None:
+    if CHISQ:
         if fit_mod.redchi < fit_high.redchi and fit_mod.redchi < fit_low.redchi:
-            #print("using mod EW components")
             return wave_mod, np.dot(weights_mod, components_mod)
         elif fit_low.redchi < fit_high.redchi and fit_low.redchi < fit_mod.redchi:
-            #print("using low EW components")
             return wave_low, np.dot(weights_low, components_low)
         else:
-            #print("using high EW components")
             return wave_high, np.dot(weights_high, components_high)
 
     #enter this branch if you want to tell ICA which components to use
     else:
         if comps_use=="mod":
-            return wave_mod, np.dot(weights_mod, components_mod)
+            return wave_mod, np.dot(weights_mod, components_mod), weights_mod
         elif comps_use=="low":
-            return wave_low, np.dot(weights_low, components_low)
+            return wave_low, np.dot(weights_low, components_low), weights_low
         elif comps_use=="high":
-            return wave_high, np.dot(weights_high, components_high)
+            return wave_high, np.dot(weights_high, components_high), weights_high
         else:
             print("Didn't recognize comps_use")
 
-def maskIterate(wave, flux, errs, mask, z, ica_path="/Users/trevormccaffrey/Dropbox/ICA_module/components/"):
-    #Iterative masking for broad absorption
+def maskIterate(wave, flux, errs, mask, wave_ica, flux_ica, ica_path="/Users/trevormccaffrey/Dropbox/ICA_module/components/"):
+    #Iterative masking for narrow absorption
     #It seems that, without this step, the reconstructions are in general underestimated
     #Start: if (reconstruction-flux)>N*sigma, mask this pixel
     N = 2.0
     #Break here if N > 4
     while N <= 4:
-        #Mask *potential* broad absorption initially
-        maskBAL = mask.copy()
-        maskBAL[(wave>=1295)&(wave<=1400)] = 99 #SiIV+OIV
-        maskBAL[(wave>=1430)&(wave<=1546)] = 99 #CIV
-        maskBAL[(wave>=1780)&(wave<=1880)] = 99 #SiIV+OIV
-        wave_ica, flux_ica = get_ICA(wave, flux, errs, maskBAL, z,
-                                      ica_path=ica_path, use_priors=True)
-        """
-        fig, ax = plt.subplots(1,1, figsize=(15,5))
-        ax.plot(wave, flux)
-        ax.plot(wave_ica, flux_ica)
-        plt.show()
-        """
         #Start from scratch with original wave, flux, etc
         niter = 0
         while niter < 10:
@@ -398,15 +367,14 @@ def maskIterate(wave, flux, errs, mask, z, ica_path="/Users/trevormccaffrey/Drop
             #Do the actual masking
             for i in range(ind_begin, ind_end+1):
                 #ind_reconst = np.argmin( abs(wave[i]-wave_ica) )
-                i_left  = max(ind_begin, i-30)
-                i_right = min(ind_end, i+30)
+                i_left  = max(ind_begin, i-15)
+                i_right = min(ind_end, i+15)
                 ir_left  = np.argmin( abs(wave[i_left]-wave_ica) )
                 ir_right = np.argmin( abs(wave[i_right]-wave_ica) )
                 #change here to only mask that pixel for now;
                 #should only mask the 10 nearest after the initial bad pixels are established
                 badpix = (flux_ica[ir_left:ir_right+1]-flux[i_left:i_right+1]) > N*errs[i_left:i_right+1]
-                if badpix.sum() > (len(badpix)//2) and mask[i]==0 and maskBAL[i]==99:
-                    #print("found a bad pix")
+                if badpix.sum() > (len(badpix)//2) and mask[i]==0:# and ~em[i]:
                     nbad += 1
                     #mask[max(ind_begin,i-10):min(ind_end,i+11)] = 1
                     mask[i] = 3
@@ -415,62 +383,22 @@ def maskIterate(wave, flux, errs, mask, z, ica_path="/Users/trevormccaffrey/Drop
             if nbad == 0:
                 break
             else:
-                for i in range(len(mask)):
-                    if mask[i]==3 and i<ind_end:
-                        mask[i-10:i+11] = 4
                 niter += 1
                 #print("N = %.2f, Try Number %d" % (N,niter))
-                wave_ica, flux_ica = get_ICA(wave, flux, errs, mask, z,
-                                              ica_path=ica_path, use_priors=False)
-        N += 0.25
+                wave_ica, flux_ica = get_ICA(wave, flux, errs, mask,
+                                              ica_path=ica_path, plot_spectrum=False, CHISQ=True, comps_use=None)
+                N += 0.25
         if nbad == 0:
+            #now that individually masked pixels are established,
+            #mask 10 additional pixels redward and blueward of those
+            for i in range(len(mask)):
+                if mask[i]==3 and i<ind_end:
+                    mask[i-10:i+11] = 4
             break
-    mask[mask==4] = 3
+        mask[mask==4] = 3
     return mask
 
-def f2500_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", use_priors=False, comps_use=None, plot_process=False):
-    #this one skips the morphing
-    wave = waveSpec.copy()
-    flux = fluxSpec.copy()
-    errs = errsSpec.copy()
-    mask = maskSpec.copy() ; mask[mask>0] = 1
-
-    # check wavelength resolution, and rebin if it doesn't match components (~69 km/s)
-    resolution = np.nanmedian([3.e5*((wave[i+1]-wave[i])/wave[i]) for i in range(len(wave)-1)])
-    if round(resolution)!=69:
-        #print("Input wavelength resolution %d km/s does not match 69 km/s.  Re-binning spectrum." % resolution)
-        wave, flux, errs, mask = rebin(wave, flux, errs, mask, resolution)
-
-    #normalize spectrum
-    norm_coeff = np.nanmedian(flux)
-    flux /= norm_coeff
-    errs /= norm_coeff
-
-    #Mask pixels >3sigma below pseudo continuum
-    #initial mask is just from initial pipeline (e.g. SDSS, HST)
-    mask_NAL, flux_NAL, flux_median_61p = maskNAL(wave, flux, errs, mask)
-
-    #do initial fit without BAL mask
-    #wave_init_ica, flux_init_ica = get_ICA(wave, flux_morph, errs_morph, mask_NAL, z, ica_path, use_priors=use_priors)
-
-    #generate iterative BAL mask
-    ## FIXME: for BAL quasars, can start with either manually defined mask covering troughs
-    ##        or generic definition done in Rankine+20
-    ##        don't want to mask generic BAL troughs for non-BALs though
-    mask_witer = maskIterate(wave, flux_NAL, errs, mask_NAL, z)
-
-    #now do ICA fit with final mask applied
-    wave_ica, flux_ica = get_ICA(wave, flux_NAL, errs, mask_witer, z,
-                                 ica_path=ica_path, use_priors=use_priors, comps_use=comps_use)
-
-    #get f2500 from reconstruction
-    #de-morph and de-normalize the spectrum to get back to real units
-    # FIXME: need to get indexing right here for edge cases - commenting out for now
-    flux_ica_realunits = flux_ica * norm_coeff
-    f2500_ica = flux_ica[np.argmin(abs(wave_ica-2500.))] * norm_coeff
-    return wave, flux*norm_coeff, errs*norm_coeff, mask_witer, wave_ica, flux_ica*norm_coeff, f2500_ica
-
-def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", use_priors=False, comps_use=None, plot_process=False):
+def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", plot_process=False):
     wave = waveSpec.copy()
     flux = fluxSpec.copy()
     errs = errsSpec.copy()
@@ -480,7 +408,7 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
     resolution = np.nanmedian([3.e5*((wave[i+1]-wave[i])/wave[i]) for i in range(len(wave)-1)])
     if round(resolution)!=69:
         print("Input wavelength resolution %d km/s does not match 69 km/s.  Re-binning spectrum." % resolution)
-        wave, flux, errs, mask = rebin(wave, flux, errs, mask, resolution)
+        wave, flux, errs, mask = rebin(wave, flux, errs, mask)
 
     #normalize spectrum
     norm_coeff = np.nanmedian(flux)
@@ -489,25 +417,29 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
 
     #Mask pixels >3sigma below pseudo continuum
     #initial mask is just from initial pipeline (e.g. SDSS, HST)
-    mask_NAL, flux_NAL, flux_median_61p = maskNAL(wave, flux, errs, mask)
+    mask_NAL, flux_median_61p = maskNAL(wave, flux, errs, mask)
 
     #standard-ize spectrum shape by morphing
-    flux_morph_NAL, morph_coeff = spec_morph.morph2(wave*(1+z), flux_NAL, errs, z, "") #note NAL pixels replaces in flux array
-    flux_morph = flux * morph_coeff
+    flux_morph, morph_coeff = spec_morph.morph2(wave*(1+z), flux, errs, z, "")
     errs_morph = errs * morph_coeff
 
     #do initial fit without BAL mask
-    #wave_init_ica, flux_init_ica = get_ICA(wave, flux_morph, errs_morph, mask_NAL, z, ica_path, use_priors=use_priors)
+    wave_init_ica, flux_init_ica = get_ICA(wave, flux_morph, errs_morph, mask_NAL, ica_path)
 
     #generate iterative BAL mask
     ## FIXME: for BAL quasars, can start with either manually defined mask covering troughs
     ##        or generic definition done in Rankine+20
     ##        don't want to mask generic BAL troughs for non-BALs though
-    mask_witer = maskIterate(wave, flux_morph_NAL, errs_morph, mask_NAL, z)
+    mask_witer = maskIterate(wave, flux_morph, errs_morph, mask_NAL,
+                             wave_init_ica, flux_init_ica)
 
     #now do ICA fit with final mask applied
-    wave_ica, flux_ica = get_ICA(wave, flux_morph_NAL, errs_morph, mask_witer, z,
-                                 ica_path=ica_path, use_priors=use_priors, comps_use=comps_use)
+    wave_ica, flux_ica, weights = get_ICA(wave, flux_morph, errs_morph, mask_witer,
+                                 ica_path=ica_path,
+                                 plot_spectrum=False, CHISQ=False, comps_use="mod")
+
+    # FIXME: should add code here that checks if CIII] is in spectrum,
+    # if it is, measure blueshift and generate priors for weights based on measurement
 
     #get f2500 from reconstruction
     #de-morph and de-normalize the spectrum to get back to real units
@@ -518,11 +450,10 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
         f2500_ica = flux_ica_realunits[np.argmin(abs(wave_ica-2500.))]
     #Note the input units - normalized, but not morphed
     except ValueError:
-        f2500_ica = get_f2500(wave, flux, errs, mask_witer, z, norm_coeff, ica_path=ica_path)
+        f2500_ica = get_f2500(wave, flux, errs, mask_witer, norm_coeff, ica_path=ica_path)
 
     if plot_process:
         #fig, [axRebin, axNAL, axIter, axICA] = plt.subplots(4, 1, figsize=(16,20))
-        """
         if round(resolution)!=69:
             fig = plt.figure(figsize=(32,14), constrained_layout=True)
             gs  = GridSpec(8, 24, figure=fig)
@@ -533,27 +464,25 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
             axICAflux = fig.add_subplot(gs[4:7,12:20])
             axICAerrs = fig.add_subplot(gs[7:,12:20], sharex=axICAflux)
             axCIV = fig.add_subplot(gs[4:,20:])
-        """
-        #else:
-        fig = plt.figure(figsize=(24,24), constrained_layout=True)
-        gs  = GridSpec(12, 18, figure=fig, hspace=2.5)
-        #plt.subplots_adjust(hspace=0)
-        axNAL = fig.add_subplot(gs[:4,:])   #CIV fitting
-        axIter = fig.add_subplot(gs[4:8,:])
-        #axICAflux = fig.add_subplot(gs[8:11,:12])
-        #axICAerrs = fig.add_subplot(gs[11:,:12], sharex=axICAflux)
-        axICAflux = fig.add_subplot(gs[8:,:12])
-        axCIV = fig.add_subplot(gs[8:,12:])
+        else:
+            fig = plt.figure(figsize=(24,24), constrained_layout=True)
+            gs  = GridSpec(12, 18, figure=fig, hspace=2.5)
+            #plt.subplots_adjust(hspace=0)
+            axNAL = fig.add_subplot(gs[:4,:])   #CIV fitting
+            axIter = fig.add_subplot(gs[4:8,:])
+            #axICAflux = fig.add_subplot(gs[8:11,:12])
+            #axICAerrs = fig.add_subplot(gs[11:,:12], sharex=axICAflux)
+            axICAflux = fig.add_subplot(gs[8:,:12])
+            axCIV = fig.add_subplot(gs[8:,12:])
         #plt.subplots_adjust(hspace=0)
         #plot initial rebin if necessary:
-        """
         if round(resolution)!=69:
             axRebin.set_title("Rebin stage")
             axRebin.plot(waveSpec, fluxSpec, "-b", alpha=0.3)
             axRebin.plot(wave, flux, "-b")
             axRebin.plot(waveSpec, fluxSpec, "-k", alpha=0.3)
             axRebin.plot(wave, errs)
-        """
+
         #plot NAL masking
         axNAL.plot(wave, flux, "-k", zorder=1, label="Normalized Spectrum")
         axNAL.scatter(wave[mask_NAL==1], flux[mask_NAL==1], s=20, color="r", zorder=2, label="Input bad pixels")
@@ -564,45 +493,19 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
         axNAL.tick_params(axis='both', which='major', labelsize=30)
         axNAL.set_title("NAL Masking", fontsize=30)
         axNAL.legend(loc="best", prop={"size":25})
-        ylims = np.nanpercentile(flux,5), np.nanpercentile(flux,99)
-        axNAL.set_ylim(ylims[0],None)
-        axNAL.set_xscale("log")
-        axNAL.set_yscale("log")
-        ticks = np.array([1200,1500,1750,2000,2200,2500,3000,3500,4000,4500,5000,6000,7000,8000])
-        ticks_use = ticks[(ticks>min(wave))&(ticks<max(wave))]
-        #ticks_use = ticks[(ticks>min(wave))&(ticks<red_expxlim)]
-        axNAL.set_xticks(ticks_use)
-        axNAL.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        axNAL.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        axNAL.get_xaxis().set_tick_params(which='minor', size=0)
-        axNAL.get_xaxis().set_tick_params(which='minor', width=0)
-        plt.minorticks_off()
 
         #plot iterative masking
         axIter.plot(wave, flux_morph, "-k", zorder=1, label="Normalized Spectrum")
-        #axIter.plot(wave_init_ica, flux_init_ica, "-b", lw=3, zorder=1, label="Initial ICA Fit")
+        axIter.plot(wave_init_ica, flux_init_ica, "-b", lw=3, zorder=1, label="Initial ICA Fit")
         axIter.scatter(wave[mask_witer==1], flux_morph[mask_witer==1], s=25, color="r", zorder=2, label="Input bad pixels")
         axIter.scatter(wave[mask_witer==2], flux_morph[mask_witer==2], s=25, color="y", zorder=2, label="NAL bad pixels")
         axIter.scatter(wave[mask_witer==3], flux_morph[mask_witer==3], s=25, color="m", zorder=2, label="Iteratively masked pixels")
-        #axIter.set_ylim(0.8*min(flux_init_ica), 1.2*max(flux_init_ica))
+        axIter.set_ylim(0.8*min(flux_init_ica), 1.2*max(flux_init_ica))
         axIter.set_ylabel("Flux Density (Arbitrary units)", fontsize=32.5)
         axIter.set_xlabel("Rest Wavelength (Å)", fontsize=32.5)
         axIter.set_title("Post morphing + iterative masking", fontsize=30)
         axIter.tick_params(axis='both', which='major', labelsize=30)
         axIter.legend(loc="best", prop={"size":25})
-        ylims = np.nanpercentile(flux,5), np.nanpercentile(flux,99)
-        axIter.set_ylim(ylims[0],None)
-        axIter.set_xscale("log")
-        axIter.set_yscale("log")
-        ticks = np.array([1200,1500,1750,2000,2200,2500,3000,3500,4000,4500,5000,6000,7000,8000])
-        ticks_use = ticks[(ticks>min(wave))&(ticks<max(wave))]
-        #ticks_use = ticks[(ticks>min(wave))&(ticks<red_expxlim)]
-        axIter.set_xticks(ticks_use)
-        axIter.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        axIter.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        axIter.get_xaxis().set_tick_params(which='minor', size=0)
-        axIter.get_xaxis().set_tick_params(which='minor', width=0)
-        plt.minorticks_off()
 
         #axICA
         axICAflux.plot(wave, flux_morph, "-k", alpha=0.7, label="Morphed spectrum")
@@ -621,4 +524,4 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
         axICAflux.tick_params(axis='both', which='major', labelsize=30)
         get_CIV(wave, flux_morph, wave_ica, flux_ica, name, ax=axCIV)
 
-    return wave, flux_morph, errs_morph, mask_witer, wave_ica, flux_ica, f2500_ica, morph_coeff #return flux with Arbitrary units as well for plotting
+    return wave, flux_morph, errs_morph, mask_witer, wave_ica, flux_ica, f2500_ica, weights #return flux with Arbitrary units as well for plotting
