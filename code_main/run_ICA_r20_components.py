@@ -457,7 +457,7 @@ def f2500_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./",
     ## FIXME: for BAL quasars, can start with either manually defined mask covering troughs
     ##        or generic definition done in Rankine+20
     ##        don't want to mask generic BAL troughs for non-BALs though
-    mask_witer = maskIterate(wave, flux_NAL, errs, mask_NAL, z)
+    mask_witer = maskIterate(wave, flux_NAL, errs, mask_NAL, z, ica_path)
 
     #now do ICA fit with final mask applied
     wave_ica, flux_ica = get_ICA(wave, flux_NAL, errs, mask_witer, z,
