@@ -72,7 +72,7 @@ def get_fit(wave, flux, errs, mask, wave_comp, flux_comp):
     return fit_y.redchi, weight
 
 
-def main(waveSpec, fluxSpec, errsSpec, maskSpec, z):
+def main(waveSpec, fluxSpec, errsSpec, maskSpec, z, path_priors="/Users/trevormccaffrey/Dropbox/HST/c3_priors/"):
     #main() should return the three sets of prior weights for the best-fit composite
 
     wave = waveSpec.copy()
@@ -87,7 +87,7 @@ def main(waveSpec, fluxSpec, errsSpec, maskSpec, z):
 
     fn_comp_list = []
     redchi_list  = []
-    for fn in glob.glob("/Users/trevormccaffrey/Dropbox/HST/c3_priors/MattS_CIV_tplte/*.fits"):
+    for fn in glob.glob(path_priors+"MattS_CIV_tplte/*.fits"):
         comp = fits.open(fn)
         c0 = comp[0].header["COEFF0"]
         c1 = comp[0].header["COEFF1"]
@@ -105,9 +105,9 @@ def main(waveSpec, fluxSpec, errsSpec, maskSpec, z):
     fn_comp_best = fn_comp_list[np.argmin(redchi_list)]
     #print(fn_comp_best)
 
-    df_mod = pd.read_csv("/Users/trevormccaffrey/Dropbox/HST/c3_priors/prior_weights_fromcomposites/modEW_priors.csv")
-    df_low = pd.read_csv("/Users/trevormccaffrey/Dropbox/HST/c3_priors/prior_weights_fromcomposites/lowEW_priors.csv")
-    df_high= pd.read_csv("/Users/trevormccaffrey/Dropbox/HST/c3_priors/prior_weights_fromcomposites/highEW_priors.csv")
+    df_mod = pd.read_csv(path_priors+"prior_weights_fromcomposites/modEW_priors.csv")
+    df_low = pd.read_csv(path_priors+"prior_weights_fromcomposites/lowEW_priors.csv")
+    df_high= pd.read_csv(path_priors+"prior_weights_fromcomposites/highEW_priors.csv")
 
     weights_mod = df_mod.iloc[df_mod["Composite_Name"].values==fn_comp_best,1:].values
     weights_low = df_low.iloc[df_low["Composite_Name"].values==fn_comp_best,1:].values
