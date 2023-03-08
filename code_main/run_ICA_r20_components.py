@@ -21,9 +21,9 @@ import numpy as np
 import pandas as pd
 from lmfit import minimize, Parameters
 import sys
-#sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/code_main/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/HST/HSTCode/")
+#sys.path.append("/Users/Trevor1/Dropbox/ICA_module/")
+sys.path.append("/Users/Trevor1/Dropbox/ICA_module/code_main/")
+sys.path.append("/Users/Trevor1/Dropbox/HST/HSTCode/")
 import fit_composites
 import plot_ICA
 import spec_morph
@@ -365,7 +365,7 @@ def get_ICA(wave, flux, errs, mask, z, ica_path="./", use_priors=True, plot_spec
         else:
             print("Didn't recognize comps_use")
 
-def maskIterate(wave, flux, errs, mask, z, ica_path="/Users/trevormccaffrey/Dropbox/ICA_module/components/"):
+def maskIterate(wave, flux, errs, mask, z, ica_path="/Users/Trevor1/Dropbox/ICA_module/components/"):
     #Iterative masking for broad absorption
     #It seems that, without this step, the reconstructions are in general underestimated
     #Start: if (reconstruction-flux)>N*sigma, mask this pixel
@@ -374,9 +374,9 @@ def maskIterate(wave, flux, errs, mask, z, ica_path="/Users/trevormccaffrey/Drop
     while N <= 4:
         #Mask *potential* broad absorption initially
         maskBAL = mask.copy()
-        maskBAL[(wave>=1295)&(wave<=1400)] = 99 #SiIV+OIV
-        maskBAL[(wave>=1430)&(wave<=1546)] = 99 #CIV
-        maskBAL[(wave>=1780)&(wave<=1880)] = 99 #SiIV+OIV
+        #maskBAL[(wave>=1295)&(wave<=1400)] = 99 #SiIV+OIV
+        #maskBAL[(wave>=1430)&(wave<=1546)] = 99 #CIV
+        #maskBAL[(wave>=1780)&(wave<=1880)] = 99 #SiIV+OIV
         wave_ica, flux_ica = get_ICA(wave, flux, errs, maskBAL, z,
                                       ica_path=ica_path, use_priors=True)
         """
@@ -621,4 +621,4 @@ def main_ICA(waveSpec, fluxSpec, errsSpec, maskSpec, z, name="", ica_path="./", 
         axICAflux.tick_params(axis='both', which='major', labelsize=30)
         get_CIV(wave, flux_morph, wave_ica, flux_ica, name, ax=axCIV)
 
-    return wave, flux_morph, errs_morph, mask_witer, wave_ica, flux_ica, f2500_ica, morph_coeff #return flux with Arbitrary units as well for plotting
+    return wave, flux_morph, errs_morph, mask_witer, wave_ica, flux_ica, f2500_ica #, morph_coeff #return flux with Arbitrary units as well for plotting

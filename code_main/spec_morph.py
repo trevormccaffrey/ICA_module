@@ -5,14 +5,14 @@ Keep morphing code in it's own file.
 import matplotlib.pyplot as plt #for testing
 import numpy as np
 import sys
-sys.path.append("/Users/trevormccaffrey/Dropbox/HST/HSTCode/")
+sys.path.append("/Users/Trevor1/Dropbox/HST/HSTCode/")
 import Small_Pix_Filter_TVM
 import BAL_regions
 
 def morph(wave, flux, z, median, unique_markers=None, return_markers=False):
     #vb01 = np.load("/Volumes/MyPassportforMac/HST/AllData/vandenberk01_continuum.npy")
-    #vb01 = np.load("/Volumes/Macintosh HD 1/Users/trevormccaffrey/Desktop/HST/AllData/vandenberk01_continuum.npy")
-    vb01 = np.load("/Users/trevormccaffrey/Dropbox/HST/ICA/vandenberk01_continuum.npy")
+    #vb01 = np.load("/Volumes/Macintosh HD 1/Users/Trevor1/Desktop/HST/AllData/vandenberk01_continuum.npy")
+    vb01 = np.load("/Users/Trevor1/Dropbox/HST/ICA/vandenberk01_continuum.npy")
     vb01_wave = vb01[:,0] * (1+z) #haven't de-redshifted wave yet
     vb01_flux = vb01[:,1] #* 10**(-17)
 
@@ -80,7 +80,7 @@ individual exposures.
 """
 def morph2(wave, flux, errs, z, Identifier):
     #Load reference spectrum
-    qso = np.load("/Users/trevormccaffrey/Dropbox/HST/ICA/qsomod_z250_ng_continuumSDSSrebin.npy")
+    qso = np.load("/Users/Trevor1/Dropbox/HST/ICA/qsomod_z250_ng_continuumSDSSrebin.npy")
     qso_wave = qso[:,0] * (1+z) #haven't de-redshifted wave yet
     qso_flux = qso[:,1] #* 10**(-17)
 

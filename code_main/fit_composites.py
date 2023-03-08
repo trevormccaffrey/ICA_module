@@ -21,9 +21,9 @@ from lmfit import minimize, Parameters
 from astropy.io import fits
 import sys
 import glob
-#sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/ICA_module/")
-sys.path.append("/Users/trevormccaffrey/Dropbox/HST/HSTCode/")
+#sys.path.append("/Users/Trevor1/Dropbox/ICA_module/")
+sys.path.append("/Users/Trevor1/Dropbox/ICA_module/")
+sys.path.append("/Users/Trevor1/Dropbox/HST/HSTCode/")
 import plot_ICA
 import spec_morph
 
@@ -72,7 +72,7 @@ def get_fit(wave, flux, errs, mask, wave_comp, flux_comp):
     return fit_y.redchi, weight
 
 
-def main(waveSpec, fluxSpec, errsSpec, maskSpec, z, path_priors="/Users/trevormccaffrey/Dropbox/HST/c3_priors/"):
+def main(waveSpec, fluxSpec, errsSpec, maskSpec, z, path_priors="/Users/Trevor1/Dropbox/HST/c3_priors/"):
     #main() should return the three sets of prior weights for the best-fit composite
 
     wave = waveSpec.copy()
